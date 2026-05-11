@@ -1,0 +1,828 @@
+title: CloudNativePG Operator Control Catalog
+metadata:
+  id: CNPG.CONTROLS
+  type: ControlCatalog
+  gemara-version: v1.0.0
+  version: v2026.05-1
+  description: >-
+    Security controls for CloudNativePG operator deployments, addressing
+    data protection, access control, supply chain integrity, operational
+    hardening, and monitoring for PostgreSQL clusters on Kubernetes.
+  author:
+    id: cnpg-maintainers
+    name: CloudNativePG Maintainers
+    type: Human
+  mapping-references:
+    - id: CCC
+      title: Common Cloud Controls Core
+      version: v2025.10
+      url: https://github.com/finos/common-cloud-controls/releases/download/v2025.10/CCC.Core_v2025.10.yaml
+      description: >-
+        Foundational repository of reusable security controls, capabilities,
+        and threat models maintained by FINOS.
+    - id: CNPG.THREATS
+      title: CloudNativePG Operator Threat Catalog
+      version: v2026.05-1
+      url: file://.github/threat-catalog.yaml
+      description: >-
+        Threat catalog for the CloudNativePG operator covering supply chain,
+        credential management, runtime security, and access control threats.
+    - id: CNPG.CAPABILITIES
+      title: CloudNativePG Operator Capability Catalog
+      version: v2026.05-1
+      url: file://.github/capability-catalog.yaml
+      description: >-
+        Capabilities provided by the CloudNativePG operator for managing
+        PostgreSQL clusters on Kubernetes.
+  applicability-groups:
+    - id: all-deployments
+      title: All Deployments
+      description: >-
+        Applies to every CloudNativePG deployment regardless of data
+        sensitivity or tenancy model.
+    - id: sensitive-data
+      title: Sensitive Data
+      description: >-
+        Applies when the PostgreSQL cluster stores regulated, confidential,
+        or otherwise sensitive data requiring elevated protection.
+    - id: multi-tenant
+      title: Multi-Tenant
+      description: >-
+        Applies when the operator manages clusters in shared Kubernetes
+        environments where namespace-level isolation is critical.
+
+groups:
+  - id: data-protection
+    title: Data Protection
+    description: >-
+      Controls protecting data confidentiality, integrity, and availability
+      across encryption, credential management, backup, and replication.
+  - id: access-control
+    title: Access Control
+    description: >-
+      Controls managing authentication, authorization, and privilege
+      boundaries for database and operator access.
+  - id: supply-chain
+    title: Supply Chain Security
+    description: >-
+      Controls ensuring the integrity and provenance of container images,
+      plugins, and other software components.
+  - id: operational-security
+    title: Operational Security
+    description: >-
+      Controls hardening the runtime environment including pod security
+      contexts and admission webhook configuration.
+  - id: monitoring
+    title: Monitoring & Observability
+    description: >-
+      Controls for logging, metrics endpoint protection, and replication
+      health monitoring.
+
+imports:
+  - reference-id: CCC
+    entries:
+      - reference-id: CCC.Core.CN01
+        remarks: >-
+          Encrypt Data for Transmission: CNPG enforces TLS on PostgreSQL
+          connections and uses certificate authentication for replication.
+          Extended by CNPG.CN01.
+      - reference-id: CCC.Core.CN02
+        remarks: >-
+          Encrypt Data for Storage: encryption at rest is delegated to the
+          underlying storage provider for PGDATA, WAL, and tablespace volumes.
+      - reference-id: CCC.Core.CN05
+        remarks: >-
+          Prevent Access from Untrusted Entities: database access is controlled
+          via pg_hba.conf and Kubernetes RBAC. Extended by CNPG.CN06.
+      - reference-id: CCC.Core.CN08
+        remarks: >-
+          Replicate Data to Multiple Locations: PostgreSQL streaming replication
+          and WAL archiving provide cross-location data protection. Extended
+          by CNPG.CN14.
+      - reference-id: CCC.Core.CN09
+        remarks: >-
+          Ensure Integrity of Access Logs: all logs stream to stdout in JSON
+          format with no intermediate spool. Extended by CNPG.CN13.
+      - reference-id: CCC.Core.CN10
+        remarks: >-
+          Restrict Data Replication to Trust Perimeter: replication targets are
+          configured via ExternalCluster definitions and logical replication CRDs.
+          Extended by CNPG.CN05.
+      - reference-id: CCC.Core.CN13
+        remarks: >-
+          Minimize Lifetime of Encryption and Authentication Certificates:
+          operator manages internal PKI with configurable certificate validity.
+          Extended by CNPG.CN03.
+      - reference-id: CCC.Core.CN14
+        remarks: >-
+          Maintain Recent Backups: scheduled backups and continuous WAL archiving
+          provide recovery capabilities. Extended by CNPG.CN04.
+
+controls:
+  # --- Data Protection ---
+
+  - id: CNPG.CN01
+    title: Enforce Minimum TLS Version
+    objective: >-
+      Ensure that TLS configuration for PostgreSQL connections cannot be
+      weakened below secure defaults, preventing protocol downgrade attacks
+      and unencrypted client connections.
+    group: data-protection
+    state: Active
+    assessment-requirements:
+      - id: CNPG.CN01.AR01
+        text: >-
+          When the Cluster is deployed, ssl_min_protocol_version MUST be
+          configured as a fixed parameter set to TLSv1.3 or higher, preventing
+          user override to weaker protocol versions.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Configure ssl_min_protocol_version as a fixed parameter in the
+          operator rather than a user-overridable default. Validate via
+          webhook that users cannot set it below TLSv1.3.
+        state: Active
+      - id: CNPG.CN01.AR02
+        text: >-
+          When the Cluster is deployed with sensitive data, the catch-all
+          pg_hba rule MUST use hostssl instead of host to reject unencrypted
+          client connections.
+        applicability:
+          - sensitive-data
+        recommendation: >-
+          Override the default catch-all pg_hba entry from host to hostssl
+          for clusters handling sensitive data. This ensures clients that
+          do not negotiate TLS are rejected at the connection level.
+        state: Active
+    threats:
+      - reference-id: CCC
+        entries:
+          - reference-id: CCC.Core.TH02
+          - reference-id: CCC.Core.TH03
+
+  - id: CNPG.CN02
+    title: Protect Kubernetes Secrets
+    objective: >-
+      Ensure that database credentials, replication certificates, and cloud
+      provider credentials stored in Kubernetes Secrets are protected from
+      unauthorized access and exposure.
+    group: data-protection
+    state: Active
+    assessment-requirements:
+      - id: CNPG.CN02.AR01
+        text: >-
+          When the Kubernetes cluster stores CNPG secrets, etcd encryption
+          at rest MUST be enabled to protect secret data on disk.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Enable the EncryptionConfiguration API resource in the Kubernetes
+          API server to encrypt Secret resources at rest in etcd using
+          AES-CBC or AES-GCM.
+        state: Active
+      - id: CNPG.CN02.AR02
+        text: >-
+          When CNPG secrets exist in a namespace, RBAC policies MUST
+          restrict read access to the operator service account and
+          explicitly authorized personnel only.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Create namespace-scoped Roles that grant get/list on secrets only
+          to the operator and instance manager service accounts. Avoid
+          cluster-wide secret read permissions.
+        state: Active
+      - id: CNPG.CN02.AR03
+        text: >-
+          When storing cloud provider credentials for object store access,
+          an external secret manager or workload identity federation MUST
+          be used instead of static credentials in Kubernetes Secrets.
+        applicability:
+          - sensitive-data
+        recommendation: >-
+          Use IAM Roles for Service Accounts (IRSA), Workload Identity, or
+          an external secret operator (e.g., External Secrets Operator) to
+          avoid storing long-lived cloud credentials in Kubernetes Secrets.
+        state: Active
+    threats:
+      - reference-id: CNPG.THREATS
+        entries:
+          - reference-id: CNPG.TH02
+
+  - id: CNPG.CN03
+    title: Manage Certificate Lifecycle
+    objective: >-
+      Ensure that internal PKI certificates managed by the operator are
+      rotated before expiry, use secure defaults, and integrate with
+      external certificate management when required.
+    group: data-protection
+    state: Active
+    assessment-requirements:
+      - id: CNPG.CN03.AR01
+        text: >-
+          When the operator manages certificates, the maximum validity
+          period for both CA and leaf certificates MUST NOT exceed 90 days.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Use the default 90-day validity period or configure shorter
+          durations via the CERTIFICATE_DURATION operator environment
+          variable. Monitor certificate expiration via operator metrics.
+        state: Active
+      - id: CNPG.CN03.AR02
+        text: >-
+          When certificates approach expiry, the operator MUST trigger
+          automatic renewal before the configured renewal threshold.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Verify that the operator's certificate reconciliation loop is
+          running and that the CERTIFICATE_EXPIRATION_THRESHOLD environment
+          variable provides adequate renewal lead time (default 7 days).
+        state: Active
+      - id: CNPG.CN03.AR03
+        text: >-
+          When managing certificates for clusters storing sensitive data,
+          cert-manager or an equivalent external CA management solution
+          MUST be integrated to provide CRL or OCSP-based revocation
+          capabilities.
+        applicability:
+          - sensitive-data
+        recommendation: >-
+          Deploy cert-manager with a trusted CA issuer and configure CNPG
+          to use BYO certificates. This enables certificate revocation
+          via CRL distribution points, which the operator's internal PKI
+          does not support.
+        state: Active
+    threats:
+      - reference-id: CNPG.THREATS
+        entries:
+          - reference-id: CNPG.TH03
+      - reference-id: CCC
+        entries:
+          - reference-id: CCC.Core.TH18
+
+  - id: CNPG.CN04
+    title: Configure WAL Archiving and Backups
+    objective: >-
+      Ensure that continuous WAL archiving and scheduled backup procedures
+      are operational, verified, and regularly tested for recoverability.
+    group: data-protection
+    state: Active
+    assessment-requirements:
+      - id: CNPG.CN04.AR01
+        text: >-
+          When the Cluster is deployed, continuous WAL archiving MUST be
+          enabled via a CNPG-I plugin and configured to archive to a
+          reliable object store.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Configure .spec.backup with a supported CNPG-I backup plugin
+          (e.g., barman-cloud-plugin) pointing to a durable object store.
+          Monitor WAL archiving status via operator metrics.
+        state: Active
+      - id: CNPG.CN04.AR02
+        text: >-
+          When the Cluster is deployed, ScheduledBackup resources MUST be
+          configured and their completion status MUST be regularly verified.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Create ScheduledBackup CRDs with appropriate cron schedules.
+          Monitor backup completion status via Kubernetes events and
+          operator metrics. Alert on backup failures.
+        state: Active
+      - id: CNPG.CN04.AR03
+        text: >-
+          When the cluster stores sensitive data, recovery procedures MUST
+          be tested at least quarterly by performing a full PITR to a
+          separate namespace or cluster.
+        applicability:
+          - sensitive-data
+        recommendation: >-
+          Schedule quarterly recovery drills using PITR to a test namespace.
+          Document recovery time and verify data integrity after restoration.
+          Use volume snapshots for faster RTO on large databases.
+        state: Active
+    threats:
+      - reference-id: CCC
+        entries:
+          - reference-id: CCC.Core.TH06
+
+  - id: CNPG.CN05
+    title: Restrict Data Replication Targets
+    objective: >-
+      Ensure that data replication via streaming replication, WAL archiving,
+      and logical replication only occurs to verified and trusted destinations.
+    group: data-protection
+    state: Active
+    assessment-requirements:
+      - id: CNPG.CN05.AR01
+        text: >-
+          When ExternalCluster definitions are configured, the target
+          endpoints MUST be verified as trusted and operated by authorized
+          parties.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Maintain a documented inventory of all ExternalCluster endpoints.
+          Verify that connection strings point to known, authorized
+          PostgreSQL instances with valid TLS certificates.
+        state: Active
+      - id: CNPG.CN05.AR02
+        text: >-
+          When Publication or Subscription CRDs exist in the namespace,
+          RBAC policies MUST restrict create and update access to
+          authorized personnel only.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Create Roles that restrict write access to Publication and
+          Subscription resources. These CRDs lack admission webhooks,
+          making RBAC the primary access control mechanism.
+        state: Active
+      - id: CNPG.CN05.AR03
+        text: >-
+          When logical replication is used with sensitive data, replication
+          targets MUST be explicitly approved and documented before
+          subscriptions are created.
+        applicability:
+          - sensitive-data
+        recommendation: >-
+          Implement an approval workflow for logical replication targets.
+          Document approved endpoints and review periodically. Consider
+          using OPA/Gatekeeper policies to validate Subscription resources.
+        state: Active
+    threats:
+      - reference-id: CCC
+        entries:
+          - reference-id: CCC.Core.TH04
+          - reference-id: CCC.Core.TH11
+
+  # --- Access Control ---
+
+  - id: CNPG.CN06
+    title: Harden Database Authentication
+    objective: >-
+      Ensure that database access uses strong authentication methods and
+      that configuration cannot introduce unauthorized access paths.
+    group: access-control
+    state: Active
+    assessment-requirements:
+      - id: CNPG.CN06.AR01
+        text: >-
+          When the Cluster is deployed, the postgres superuser password
+          MUST remain set to NULL, disabling password-based superuser
+          authentication over the network.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Do not configure a superuser secret in the Cluster spec. The
+          operator sets the superuser password to NULL by default. Superuser
+          access remains available via local Unix socket (peer auth) for
+          administrative operations.
+        state: Active
+      - id: CNPG.CN06.AR02
+        text: >-
+          When custom pg_hba rules are configured, no rule MUST use the
+          trust authentication method, which allows unauthenticated
+          connections.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Review all custom pg_hba entries in the Cluster spec. Use
+          scram-sha-256 or cert authentication methods. Consider
+          implementing a validating webhook or OPA policy to reject
+          pg_hba rules containing trust authentication.
+        state: Active
+      - id: CNPG.CN06.AR03
+        text: >-
+          When machine-to-machine connections are established to clusters
+          storing sensitive data, mutual TLS (mTLS) with certificate-based
+          authentication MUST be used.
+        applicability:
+          - sensitive-data
+        recommendation: >-
+          Configure application database users with cert authentication
+          in pg_hba rules. Distribute client certificates via Kubernetes
+          Secrets and rotate them alongside server certificates.
+        state: Active
+    threats:
+      - reference-id: CCC
+        entries:
+          - reference-id: CCC.Core.TH01
+          - reference-id: CCC.Core.TH17
+
+  - id: CNPG.CN07
+    title: Minimize Operator RBAC Scope
+    objective: >-
+      Ensure that operator permissions follow the principle of least
+      privilege and that blast radius is limited through namespace
+      isolation and network restrictions.
+    group: access-control
+    state: Active
+    assessment-requirements:
+      - id: CNPG.CN07.AR01
+        text: >-
+          When the operator is deployed in a multi-tenant environment,
+          namespace isolation MUST be used to limit the operator's watch
+          scope to designated namespaces.
+        applicability:
+          - multi-tenant
+        recommendation: >-
+          Deploy separate operator instances per tenant or use the
+          WATCH_NAMESPACE environment variable to restrict the operator
+          to specific namespaces. This limits blast radius if the
+          operator is compromised.
+        state: Active
+      - id: CNPG.CN07.AR02
+        text: >-
+          When the operator is deployed, service account token usage
+          MUST be monitored for anomalous activity indicating potential
+          compromise.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Enable Kubernetes audit logging for service account token
+          events. Monitor for unusual API calls from the operator service
+          account, especially pods/exec, secret access, and webhook
+          configuration changes.
+        state: Active
+      - id: CNPG.CN07.AR03
+        text: >-
+          When the operator is deployed, NetworkPolicies MUST restrict
+          inbound network access to the operator pod to only the
+          Kubernetes API server and managed instance pods.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Create a NetworkPolicy for the operator namespace that allows
+          ingress only from the API server (for webhooks) and egress
+          to managed namespaces. Block all other inbound traffic to the
+          operator pod.
+        state: Active
+    threats:
+      - reference-id: CNPG.THREATS
+        entries:
+          - reference-id: CNPG.TH05
+
+  # --- Supply Chain Security ---
+
+  - id: CNPG.CN08
+    title: Verify Container Image Provenance
+    objective: >-
+      Ensure that container images for the operator and PostgreSQL instances
+      are verified for integrity and provenance before deployment, and that
+      only supported versions are used.
+    group: supply-chain
+    state: Active
+    assessment-requirements:
+      - id: CNPG.CN08.AR01
+        text: >-
+          When container images are deployed, their cosign signatures MUST
+          be verified via an admission policy controller before the pod
+          is admitted.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Deploy Sigstore policy-controller or Kyverno with image
+          verification policies. CloudNativePG publishes cosign signatures
+          using keyless OIDC authentication for both operator and
+          operand images.
+        state: Active
+      - id: CNPG.CN08.AR02
+        text: >-
+          When PostgreSQL instances are deployed, only images listed in
+          an approved ImageCatalog or ClusterImageCatalog MUST be used.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Create ImageCatalog or ClusterImageCatalog resources listing
+          approved PostgreSQL images. Reference these catalogs in Cluster
+          specs via .spec.imageCatalogRef. This prevents use of arbitrary
+          images.
+        state: Active
+      - id: CNPG.CN08.AR03
+        text: >-
+          When PostgreSQL instances are deployed, the PostgreSQL major
+          version MUST be within the vendor's active support lifecycle.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Track PostgreSQL version support timelines and update
+          ImageCatalog entries when versions reach end-of-life. Use
+          pg_upgrade Jobs to perform major version upgrades before
+          support expires.
+        state: Active
+    threats:
+      - reference-id: CNPG.THREATS
+        entries:
+          - reference-id: CNPG.TH01
+      - reference-id: CCC
+        entries:
+          - reference-id: CCC.Core.TH14
+
+  - id: CNPG.CN09
+    title: Validate CNPG-I Plugin Integrity
+    objective: >-
+      Ensure that CNPG-I plugins are sourced from trusted providers, use
+      secure communication channels, and their behavior is audited.
+    group: supply-chain
+    state: Active
+    assessment-requirements:
+      - id: CNPG.CN09.AR01
+        text: >-
+          When CNPG-I plugins are deployed, the plugin container images
+          MUST be from verified and approved sources with validated
+          signatures.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Maintain an allowlist of approved plugin images. Apply the same
+          image verification policies used for operator and PostgreSQL
+          images to plugin sidecar containers.
+        state: Active
+      - id: CNPG.CN09.AR02
+        text: >-
+          When remote CNPG-I plugins are used, communication MUST use
+          mutual TLS with a minimum version of TLS 1.3.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Verify that remote plugin configurations specify mTLS with
+          TLS 1.3. The operator enforces TLS 1.3 minimum for remote
+          plugins by default. Ensure plugin certificates are managed
+          and rotated.
+        state: Active
+      - id: CNPG.CN09.AR03
+        text: >-
+          When plugins perform privileged operations on clusters storing
+          sensitive data, plugin behavior MUST be audited regularly for
+          unexpected or unauthorized operations.
+        applicability:
+          - sensitive-data
+        recommendation: >-
+          Review plugin capability declarations against actual behavior.
+          Monitor plugin-initiated operations via operator logs and
+          Kubernetes audit logs. Plugins can claim any capability, so
+          behavioral auditing is essential.
+        state: Active
+    threats:
+      - reference-id: CNPG.THREATS
+        entries:
+          - reference-id: CNPG.TH04
+
+  # --- Operational Security ---
+
+  - id: CNPG.CN10
+    title: Harden Pod Security
+    objective: >-
+      Ensure that PostgreSQL pods run with hardened security contexts that
+      minimize the attack surface and prevent privilege escalation.
+    group: operational-security
+    state: Active
+    assessment-requirements:
+      - id: CNPG.CN10.AR01
+        text: >-
+          When PostgreSQL pods are deployed, they MUST run as non-root
+          with all Linux capabilities dropped and privilege escalation
+          disabled.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Verify that the default SecurityContext is in effect: runAsNonRoot
+          true, allowPrivilegeEscalation false, capabilities drop ALL.
+          The operator sets these defaults but they can be overridden via
+          the Cluster spec.
+        state: Active
+      - id: CNPG.CN10.AR02
+        text: >-
+          When PostgreSQL pods are deployed, they MUST use read-only root
+          filesystems with seccomp profiles applied.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Verify that readOnlyRootFilesystem is true and a seccomp profile
+          is configured in the pod SecurityContext. The operator enables
+          these by default.
+        state: Active
+      - id: CNPG.CN10.AR03
+        text: >-
+          When clusters store sensitive data, SecurityContext overrides
+          in the Cluster spec MUST NOT weaken the operator's default
+          hardened settings.
+        applicability:
+          - sensitive-data
+        recommendation: >-
+          Implement an OPA/Gatekeeper policy or validating webhook that
+          rejects Cluster specs where .spec.securityContext weakens
+          defaults (e.g., re-enabling capabilities, disabling seccomp,
+          or allowing privilege escalation).
+        state: Active
+    threats:
+      - reference-id: CNPG.THREATS
+        entries:
+          - reference-id: CNPG.TH05
+          - reference-id: CNPG.TH01
+
+  - id: CNPG.CN11
+    title: Protect Admission Webhooks
+    objective: >-
+      Ensure that validating and mutating admission webhooks remain
+      operational and their configurations cannot be tampered with to
+      bypass security checks.
+    group: operational-security
+    state: Active
+    assessment-requirements:
+      - id: CNPG.CN11.AR01
+        text: >-
+          When admission webhooks are deployed, failurePolicy MUST be
+          set to Fail to prevent unvalidated resources from being admitted
+          during webhook unavailability.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Verify that all ValidatingWebhookConfiguration and
+          MutatingWebhookConfiguration resources for CNPG CRDs have
+          failurePolicy set to Fail. This is the operator default.
+        state: Active
+      - id: CNPG.CN11.AR02
+        text: >-
+          When admission webhooks are deployed, the webhook configurations
+          MUST NOT be modifiable by any service account other than the
+          operator's own service account and cluster administrators.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Restrict RBAC on ValidatingWebhookConfiguration and
+          MutatingWebhookConfiguration resources. The operator requires
+          get and patch permissions on these resources; ensure no other
+          service accounts in the cluster have write access.
+        state: Active
+    threats:
+      - reference-id: CNPG.THREATS
+        entries:
+          - reference-id: CNPG.TH05
+      - reference-id: CCC
+        entries:
+          - reference-id: CCC.Core.TH17
+
+  # --- Monitoring & Observability ---
+
+  - id: CNPG.CN12
+    title: Protect Metrics and Status Endpoints
+    objective: >-
+      Ensure that Prometheus metrics and status endpoints on both the
+      operator and PostgreSQL instances are protected from unauthorized
+      access and information disclosure.
+    group: monitoring
+    state: Active
+    assessment-requirements:
+      - id: CNPG.CN12.AR01
+        text: >-
+          When the operator and PostgreSQL instances are deployed,
+          NetworkPolicies MUST restrict access to metrics ports (9187,
+          8080) and status ports (8000) to authorized monitoring systems.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Create NetworkPolicies that allow ingress to ports 9187, 8080,
+          and 8000 only from Prometheus scraper pods or the monitoring
+          namespace. Block all other inbound traffic to these ports.
+        state: Active
+      - id: CNPG.CN12.AR02
+        text: >-
+          When clusters store sensitive data, TLS MUST be enabled on
+          instance metrics endpoints to encrypt metrics data in transit.
+        applicability:
+          - sensitive-data
+        recommendation: >-
+          Enable TLS on the instance metrics endpoint via the Cluster
+          spec. Metrics expose operational details including database
+          names, replication status, and cluster topology that may be
+          sensitive.
+        state: Active
+      - id: CNPG.CN12.AR03
+        text: >-
+          When metrics endpoints for clusters storing sensitive data are
+          exposed beyond the Kubernetes cluster, authentication MUST be
+          implemented at the network or proxy layer.
+        applicability:
+          - sensitive-data
+        recommendation: >-
+          Deploy an authenticating reverse proxy or service mesh sidecar
+          in front of metrics endpoints when they are exposed via
+          ingress or load balancer. The built-in metrics server does
+          not support authentication natively.
+        state: Active
+    threats:
+      - reference-id: CCC
+        entries:
+          - reference-id: CCC.Core.TH08
+          - reference-id: CCC.Core.TH15
+          - reference-id: CCC.Core.TH19
+
+  - id: CNPG.CN13
+    title: Ensure Log Integrity
+    objective: >-
+      Ensure that database, audit, and operator logs are streamed to
+      tamper-evident external storage and that access to log data is
+      restricted to authorized personnel.
+    group: monitoring
+    state: Active
+    assessment-requirements:
+      - id: CNPG.CN13.AR01
+        text: >-
+          When the operator and PostgreSQL instances are running, all
+          logs MUST be streamed to an external log aggregation system
+          with tamper-evident storage.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Deploy a log collector (e.g., Fluent Bit, Vector) that captures
+          stdout from all CNPG pods and forwards to an immutable log store.
+          CNPG logs are emitted as JSON to stdout with no on-disk spool.
+        state: Active
+      - id: CNPG.CN13.AR02
+        text: >-
+          When the operator and PostgreSQL instances are running, RBAC
+          on the pods/log subresource MUST restrict access to authorized
+          personnel only.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Create Roles that grant pods/log access only to operations and
+          security teams. PostgreSQL logs may contain query text, usernames,
+          and error messages. PGAudit logs include full SQL statements.
+        state: Active
+      - id: CNPG.CN13.AR03
+        text: >-
+          When clusters store sensitive data, PGAudit MUST be enabled
+          and configured to log critical database operations including
+          DDL, role changes, and privilege modifications.
+        applicability:
+          - sensitive-data
+        recommendation: >-
+          Enable the pgaudit extension and configure pgaudit.log to
+          include ddl, role, and write categories at minimum. PGAudit
+          logs are emitted on a separate JSON channel on stdout.
+        state: Active
+    threats:
+      - reference-id: CCC
+        entries:
+          - reference-id: CCC.Core.TH07
+          - reference-id: CCC.Core.TH09
+
+  - id: CNPG.CN14
+    title: Monitor Replication Health
+    objective: >-
+      Ensure that replication lag and failures are detected promptly and
+      that data protection guarantees are enforced for critical workloads.
+    group: monitoring
+    state: Active
+    assessment-requirements:
+      - id: CNPG.CN14.AR01
+        text: >-
+          When streaming replication is active, replication lag metrics
+          MUST be monitored and alerts MUST fire when lag exceeds
+          acceptable thresholds.
+        applicability:
+          - all-deployments
+        recommendation: >-
+          Configure Prometheus alerts on the cnpg_pg_replication_lag
+          metric. Set thresholds appropriate to the workload's RPO
+          requirements. The operator's built-in exporter publishes
+          replication metrics on every instance.
+        state: Active
+      - id: CNPG.CN14.AR02
+        text: >-
+          When clusters store sensitive data with zero data loss
+          requirements, synchronous replication MUST be enabled with
+          an appropriate number of synchronous standbys.
+        applicability:
+          - sensitive-data
+        recommendation: >-
+          Configure .spec.postgresql.synchronous with quorum or priority
+          mode and the desired number of synchronous standbys. This
+          achieves RPO=0 at the cost of write latency proportional to
+          network round-trip time to the slowest synchronous standby.
+        state: Active
+      - id: CNPG.CN14.AR03
+        text: >-
+          When clusters store sensitive data, failover quorum MUST be
+          enabled to prevent promotion of instances that may not have
+          all committed data.
+        applicability:
+          - sensitive-data
+        recommendation: >-
+          Enable .spec.failoverDelay and configure quorum-based failover
+          to ensure that promotion only occurs when it is guaranteed the
+          promoted instance has all committed transactions. This prevents
+          data loss during unplanned failovers.
+        state: Active
+    threats:
+      - reference-id: CCC
+        entries:
+          - reference-id: CCC.Core.TH05
+          - reference-id: CCC.Core.TH06
