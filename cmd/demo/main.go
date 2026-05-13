@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -107,6 +108,12 @@ func run() error {
 	}
 	fmt.Println("  Wrote oscal-assessment-results.json")
 
+	fmt.Println("Writing assessment summary...")
+	if err := writeSummary(filepath.Join(outputDir, "summary.md"), catalog, evalLog); err != nil {
+		return fmt.Errorf("writing summary: %w", err)
+	}
+	fmt.Println("  Wrote summary.md")
+
 	// --- Summary ---
 
 	fmt.Println()
@@ -157,6 +164,47 @@ func printSummary(catalog *gemara.ControlCatalog, evalLog *gemara.EvaluationLog)
 	fmt.Println("  output/oscal-catalog.json")
 	fmt.Println("  output/oscal-assessment-results.json")
 	fmt.Println("  output/controls.md")
+	fmt.Println("  output/summary.md")
+}
+
+func writeSummary(path string, catalog *gemara.ControlCatalog, evalLog *gemara.EvaluationLog) error {
+	controlTitles := make(map[string]string, len(catalog.Controls))
+	for _, c := range catalog.Controls {
+		controlTitles[c.Id] = c.Title
+	}
+
+	counts := make(map[string]int)
+	for _, eval := range evalLog.Evaluations {
+		counts[eval.Result.String()]++
+	}
+
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "# %s Assessment Summary\n\n", catalog.Title)
+	fmt.Fprintf(&buf, "**Target:** %s (%s)  \n", evalLog.Target.Name, evalLog.Target.Environment)
+	fmt.Fprintf(&buf, "**Result:** %s  \n", evalLog.Result.String())
+	fmt.Fprintf(&buf, "**Catalog Version:** %s  \n", catalog.Metadata.Version)
+	fmt.Fprintf(&buf, "\n## Evaluation Results\n\n")
+	fmt.Fprintf(&buf, "| Control | Title | Result |\n")
+	fmt.Fprintf(&buf, "|:--|:--|:--|\n")
+
+	for _, eval := range evalLog.Evaluations {
+		title := controlTitles[eval.Control.EntryId]
+		fmt.Fprintf(&buf, "| %s | %s | %s |\n", eval.Control.EntryId, title, eval.Result.String())
+	}
+
+	fmt.Fprintf(&buf, "\n**Passed:** %d | **Failed:** %d | **Needs Review:** %d\n",
+		counts["Passed"], counts["Failed"], counts["Needs Review"])
+
+	fmt.Fprintf(&buf, "\n## Artifacts\n\n")
+	fmt.Fprintf(&buf, "| File | Format | Detail |\n")
+	fmt.Fprintf(&buf, "|:--|:--|:--|\n")
+	fmt.Fprintf(&buf, "| oscal-catalog.json | OSCAL Catalog | %d controls, %d groups |\n",
+		len(catalog.Controls), len(catalog.Groups))
+	fmt.Fprintf(&buf, "| oscal-assessment-results.json | OSCAL Assessment Results | %d evaluations |\n",
+		len(evalLog.Evaluations))
+	fmt.Fprintf(&buf, "| controls.md | Markdown | Full control catalog |\n")
+
+	return os.WriteFile(path, buf.Bytes(), 0o644)
 }
 
 func writeJSON(path string, v any) error {

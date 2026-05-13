@@ -61,10 +61,12 @@ jobs:
 
             | Artifact | Description |
             |:--|:--|
+            | `summary.md` | Assessment summary with evaluation results |
             | `oscal-catalog.json` | OSCAL Catalog from CloudNativePG Control Catalog |
             | `oscal-assessment-results.json` | OSCAL Assessment Results from EvaluationLog |
-            | `controls.md` | Human-readable control catalog summary |
+            | `controls.md` | Full control catalog in Markdown |
           files: |
             output/oscal-catalog.json
             output/oscal-assessment-results.json
             output/controls.md
+            output/summary.md
