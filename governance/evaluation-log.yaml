@@ -1,0 +1,241 @@
+metadata:
+  id: CNPG.EVAL.2026-05
+  type: EvaluationLog
+  gemara-version: v1.0.0
+  version: v2026.05-1
+  description: >-
+    Evaluation of CloudNativePG operator security controls against a
+    staging deployment for OpenSSF Community Day 2026 demo.
+  author:
+    id: demo-evaluator
+    name: OpenSSF Community Day Demo
+    type: Software
+  mapping-references:
+    - id: CNPG.CONTROLS
+      title: CloudNativePG Operator Control Catalog
+      version: v2026.05-1
+      url: file://governance/controls/controls.yaml
+      description: >-
+        Security controls for CloudNativePG operator deployments.
+
+target:
+  id: cnpg-demo-cluster
+  name: CloudNativePG Demo Cluster
+  type: Software
+  environment: staging
+
+result: Failed
+
+evaluations:
+  - name: Enforce Minimum TLS Version
+    result: Passed
+    message: >-
+      TLS 1.3 is configured as a fixed parameter. The catch-all pg_hba
+      rule uses hostssl for this deployment.
+    control:
+      reference-id: CNPG.CONTROLS
+      entry-id: CNPG.CN01
+    assessment-logs:
+      - requirement:
+          reference-id: CNPG.CONTROLS
+          entry-id: CNPG.CN01.AR01
+        description: >-
+          Verify ssl_min_protocol_version is configured as a fixed parameter
+          set to TLSv1.3 or higher.
+        result: Passed
+        message: >-
+          ssl_min_protocol_version is set to TLSv1.3 as a fixed parameter
+          in the operator configuration.
+        applicability:
+          - all-deployments
+        start: "2026-05-13T10:00:00Z"
+        end: "2026-05-13T10:00:05Z"
+      - requirement:
+          reference-id: CNPG.CONTROLS
+          entry-id: CNPG.CN01.AR02
+        description: >-
+          Verify the catch-all pg_hba rule uses hostssl instead of host
+          for sensitive data deployments.
+        result: Passed
+        message: >-
+          The catch-all pg_hba entry is configured as hostssl, rejecting
+          unencrypted client connections.
+        applicability:
+          - sensitive-data
+        start: "2026-05-13T10:00:05Z"
+        end: "2026-05-13T10:00:08Z"
+
+  - name: Harden Database Authentication
+    result: Passed
+    message: >-
+      Superuser password is NULL. No pg_hba rules use trust authentication.
+      Application users authenticate via scram-sha-256.
+    control:
+      reference-id: CNPG.CONTROLS
+      entry-id: CNPG.CN06
+    assessment-logs:
+      - requirement:
+          reference-id: CNPG.CONTROLS
+          entry-id: CNPG.CN06.AR01
+        description: >-
+          Verify the postgres superuser password is set to NULL, disabling
+          password-based superuser authentication over the network.
+        result: Passed
+        message: >-
+          No superuser secret is configured in the Cluster spec. The operator
+          sets the superuser password to NULL by default.
+        applicability:
+          - all-deployments
+        start: "2026-05-13T10:01:00Z"
+        end: "2026-05-13T10:01:04Z"
+      - requirement:
+          reference-id: CNPG.CONTROLS
+          entry-id: CNPG.CN06.AR02
+        description: >-
+          Verify no custom pg_hba rules use the trust authentication method.
+        result: Passed
+        message: >-
+          All custom pg_hba entries use scram-sha-256 authentication.
+          No trust-based rules found.
+        applicability:
+          - all-deployments
+        start: "2026-05-13T10:01:04Z"
+        end: "2026-05-13T10:01:07Z"
+
+  - name: Verify Container Image Provenance
+    result: Failed
+    message: >-
+      No admission policy controller is deployed to verify cosign signatures.
+      Images are pulled without provenance verification.
+    control:
+      reference-id: CNPG.CONTROLS
+      entry-id: CNPG.CN08
+    assessment-logs:
+      - requirement:
+          reference-id: CNPG.CONTROLS
+          entry-id: CNPG.CN08.AR01
+        description: >-
+          Verify container image cosign signatures are validated by an
+          admission policy controller before pod admission.
+        result: Failed
+        message: >-
+          No Sigstore policy-controller or Kyverno image verification
+          policy is deployed in the cluster. Container images are admitted
+          without signature verification.
+        applicability:
+          - all-deployments
+        start: "2026-05-13T10:02:00Z"
+        end: "2026-05-13T10:02:10Z"
+        recommendation: >-
+          Deploy Sigstore policy-controller or Kyverno with image
+          verification policies for CloudNativePG operator and operand images.
+      - requirement:
+          reference-id: CNPG.CONTROLS
+          entry-id: CNPG.CN08.AR02
+        description: >-
+          Verify only images listed in an approved ImageCatalog or
+          ClusterImageCatalog are used.
+        result: Passed
+        message: >-
+          The Cluster spec references a ClusterImageCatalog containing
+          approved PostgreSQL 17 images.
+        applicability:
+          - all-deployments
+        start: "2026-05-13T10:02:10Z"
+        end: "2026-05-13T10:02:14Z"
+      - requirement:
+          reference-id: CNPG.CONTROLS
+          entry-id: CNPG.CN08.AR03
+        description: >-
+          Verify PostgreSQL major version is within vendor active support lifecycle.
+        result: Passed
+        message: >-
+          PostgreSQL 17 is within the active support lifecycle
+          (EOL November 2029).
+        applicability:
+          - all-deployments
+        start: "2026-05-13T10:02:14Z"
+        end: "2026-05-13T10:02:16Z"
+
+  - name: Harden Pod Security
+    result: Passed
+    message: >-
+      PostgreSQL pods run as non-root with all capabilities dropped,
+      privilege escalation disabled, read-only root filesystem, and
+      seccomp profile applied.
+    control:
+      reference-id: CNPG.CONTROLS
+      entry-id: CNPG.CN10
+    assessment-logs:
+      - requirement:
+          reference-id: CNPG.CONTROLS
+          entry-id: CNPG.CN10.AR01
+        description: >-
+          Verify PostgreSQL pods run as non-root with all Linux capabilities
+          dropped and privilege escalation disabled.
+        result: Passed
+        message: >-
+          SecurityContext confirms runAsNonRoot true,
+          allowPrivilegeEscalation false, capabilities drop ALL.
+        applicability:
+          - all-deployments
+        start: "2026-05-13T10:03:00Z"
+        end: "2026-05-13T10:03:06Z"
+      - requirement:
+          reference-id: CNPG.CONTROLS
+          entry-id: CNPG.CN10.AR02
+        description: >-
+          Verify PostgreSQL pods use read-only root filesystems with
+          seccomp profiles applied.
+        result: Passed
+        message: >-
+          readOnlyRootFilesystem is true and RuntimeDefault seccomp
+          profile is applied.
+        applicability:
+          - all-deployments
+        start: "2026-05-13T10:03:06Z"
+        end: "2026-05-13T10:03:09Z"
+
+  - name: Ensure Log Integrity
+    result: Needs Review
+    message: >-
+      Logs stream to stdout in JSON format. RBAC restricts pods/log access.
+      External log aggregation with tamper-evident storage has not been
+      verified.
+    control:
+      reference-id: CNPG.CONTROLS
+      entry-id: CNPG.CN13
+    assessment-logs:
+      - requirement:
+          reference-id: CNPG.CONTROLS
+          entry-id: CNPG.CN13.AR01
+        description: >-
+          Verify all logs are streamed to an external log aggregation
+          system with tamper-evident storage.
+        result: Needs Review
+        message: >-
+          Logs are emitted as JSON to stdout. A Fluent Bit DaemonSet is
+          deployed but the destination log store immutability configuration
+          could not be verified during this assessment.
+        applicability:
+          - all-deployments
+        start: "2026-05-13T10:04:00Z"
+        end: "2026-05-13T10:04:15Z"
+        recommendation: >-
+          Obtain confirmation from the platform team that the log
+          destination uses immutable or append-only storage.
+        confidence-level: Low
+      - requirement:
+          reference-id: CNPG.CONTROLS
+          entry-id: CNPG.CN13.AR02
+        description: >-
+          Verify RBAC on the pods/log subresource restricts access to
+          authorized personnel only.
+        result: Passed
+        message: >-
+          Only the operations and security team Roles have pods/log
+          permissions in the cluster namespace.
+        applicability:
+          - all-deployments
+        start: "2026-05-13T10:04:15Z"
+        end: "2026-05-13T10:04:20Z"

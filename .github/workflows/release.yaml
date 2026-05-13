@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: Apache-2.0
+
+name: Release OSCAL Artifacts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'governance/**'
+      - 'cmd/**'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build -o ./bin/demo ./cmd/demo
+
+      - name: Run conversions
+        run: ./bin/demo
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(grep 'version:' governance/controls/controls.yaml | head -1 | awk '{print $2}')
+          echo "tag=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Check if release exists
+        id: check
+        run: |
+          if gh release view "${{ steps.version.outputs.tag }}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create release
+        if: steps.check.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          body: |
+            ## Gemara-OSCAL Artifacts
+
+            Generated from Gemara governance artifacts using
+            [go-gemara](https://github.com/gemaraproj/go-gemara) SDK.
+
+            | Artifact | Description |
+            |:--|:--|
+            | `oscal-catalog.json` | OSCAL Catalog from CloudNativePG Control Catalog |
+            | `oscal-assessment-results.json` | OSCAL Assessment Results from EvaluationLog |
+            | `controls.md` | Human-readable control catalog summary |
+          files: |
+            output/oscal-catalog.json
+            output/oscal-assessment-results.json
+            output/controls.md
