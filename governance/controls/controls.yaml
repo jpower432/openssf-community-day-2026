@@ -644,7 +644,7 @@ controls:
           - all-deployments
         recommendation: >-
           Verify that all ValidatingWebhookConfiguration and
-          MutatingWebhookConfiguration resources for CNPG CRDs have
+          MutatingWebhookConfiguration resources for CloudNativePG CRDs have
           failurePolicy set to Fail. This is the operator default.
         state: Active
       - id: CNPG.CN11.AR02
