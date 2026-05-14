@@ -47,26 +47,24 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Read summary
+        if: steps.check.outputs.exists == 'false'
+        id: summary
+        run: |
+          {
+            echo 'body<<SUMMARY_EOF'
+            cat output/summary.md
+            echo 'SUMMARY_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create release
         if: steps.check.outputs.exists == 'false'
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
-          body: |
-            ## Gemara-OSCAL Artifacts
-
-            Generated from Gemara governance artifacts using
-            [go-gemara](https://github.com/gemaraproj/go-gemara) SDK.
-
-            | Artifact | Description |
-            |:--|:--|
-            | `summary.md` | Assessment summary with evaluation results |
-            | `oscal-catalog.json` | OSCAL Catalog from CloudNativePG Control Catalog |
-            | `oscal-assessment-results.json` | OSCAL Assessment Results from EvaluationLog |
-            | `controls.md` | Full control catalog in Markdown |
+          body: ${{ steps.summary.outputs.body }}
           files: |
             output/oscal-catalog.json
             output/oscal-assessment-results.json
             output/controls.md
-            output/summary.md
