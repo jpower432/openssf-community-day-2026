@@ -2,27 +2,63 @@
 
 Demo repository for [OpenSSF Community Day 2026](https://openssf.org/).
 
-## Different Audiences, Different Purposes
+## Inner Loop, Outer Loop
 
-**OSCAL communicates upward and outward.** Its models document how an organization's policies and procedures satisfy external requirements. The audience is the assessor, the authorizing official, the regulator. SSPs, assessment results, and POA&Ms are proof artifacts -- they demonstrate compliance to an external party.
+Gemara and OSCAL serve different loops in the GRC lifecycle.
 
-OSCAL does not communicate downward and inward. It is not designed to disseminate security guidance to the people who are subject to those policies and need to demonstrate conformance. An OSCAL SSP tells an auditor that TLS 1.3 is enforced. It does not tell an operator *why* that matters, *how* to verify it, or *what else* to consider.
+The **inner loop** is Gemara. Start from foundational guidance and regulations, model threats and capabilities for a specific technology, derive controls with assessment requirements, set organizational policy defining who must conform, evaluate conformance against sensitive activities, enforce corrective actions, and audit the efficacy of the whole chain. The full cycle focuses on practitioners, policy owners, and the organization iterating on their security posture.
 
-**Gemara communicates inward and downward.** Its models give practitioners the security knowledge they need to act: what threats exist, what controls to implement, how to assess whether they've done it right. Threat catalogs, capability mappings, control objectives, and assessment requirements are operational artifacts -- they enable conformance.
+The **outer loop** is OSCAL. For an organization subject to formal compliance requirements, OSCAL models the conversation with an external authority: author and tailor control catalogs into profiles, document how system components implement those controls in an SSP, plan and execute assessments, record assessment results, and track remediation through POA&M. The cycle crosses the organizational boundary -- the audience is the assessor, the regulator, the authorizing official.
 
-| | **Gemara** | **OSCAL** |
+The inner loop runs continuously. The outer loop runs when you need to prove it to someone outside.
+
+```mermaid
+flowchart LR
+    subgraph inner["Inner Loop (Gemara)"]
+        direction TB
+        T[Threats] --> C[Controls]
+        C --> P["Policy (Rule):\nEncryption at rest required"]
+        P --> E[Evaluate Conformance]
+        E -->|results back\nto practitioners| T
+    end
+
+    subgraph outer["Outer Loop (OSCAL)"]
+        direction TB
+        SSP["SSP:\nPolicy as control\nimplementation"]
+        AR[Assessment Results]
+        POAM[POA&M]
+        SSP --> AR --> POAM
+    end
+
+    E -- "ToOSCAL()\nlast mile" --> SSP
+
+    style inner fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
+    style outer fill:#1a1a2e,stroke:#8b0000,color:#e0e0e0
+```
+
+Consider an organizational policy on encryption at rest. It appears in both loops, but serves a different purpose:
+
+- **Inner loop (Gemara):** the policy is a **rule** -- it defines who is subject to the requirement and what they must do. Practitioners evaluate their deployment against it and feed results back.
+- **Outer loop (OSCAL):** the policy is a **control implementation** -- it describes how the system satisfies the requirement. It sits inside an SSP as part of the system's compliance posture for an external assessor.
+
+| | **Inner Loop (Gemara)** | **Outer Loop (OSCAL)** |
 |:--|:--|:--|
 | **Direction** | Inward, to practitioners | Outward, to assessors |
 | **Purpose** | Enable conformance | Prove compliance |
 | **Audience** | Maintainer, operator, SRE | Auditor, regulator, authorizing official |
+| **Boundary** | People -- who is subject to the policy | Systems -- what infrastructure is in scope of the authorization |
 | **Captures** | Threats, capabilities, controls, evaluation | SSP, profiles, assessment results, POA&M |
-| **Question** | "What should I do and why?" | "Can you prove you did it?" |
+| **Question** | "Who needs to do what, and why?" | "Does this system meet the requirements?" |
 
 ## Where They Meet
 
 Projects like [FINOS Common Cloud Controls](https://github.com/finos/common-cloud-controls) author shared, reusable controls in Gemara. Upstream projects import those controls and specialize them with project-specific threat context and assessment requirements. Operators use that guidance to secure their deployments.
 
-When those operators sit inside a regulated organization, the compliance team needs to prove conformance to an external party. That is where OSCAL enters. Tooling converts Gemara control catalogs and evaluation logs into OSCAL Catalogs and Assessment Results -- the last mile from operational guidance to formal evidence.
+The inner loop artifacts -- control catalogs, policies, evaluation logs -- act as implementation and evidence for the outer loop. A Gemara Policy is a control implementation in an SSP. A Gemara EvaluationLog is assessment evidence. The inner loop produces what the outer loop documents.
+
+But the inner loop alone cannot satisfy formal compliance. Gemara's boundary is people -- who is subject to the policy. Formal compliance requires a system boundary -- what infrastructure is in scope of the authorization. Without that system-scoping, you cannot write an SSP for a specific deployment, assess a specific system's control implementation, or grant authorization. The inner loop artifacts are necessary but not sufficient. The outer loop adds the system context that formal compliance demands.
+
+That is where OSCAL enters. Tooling converts Gemara control catalogs and evaluation logs into OSCAL Catalogs and Assessment Results, placing the inner loop's artifacts into the system-scoped structure that assessors and regulators require.
 
 Neither replaces the other. Gemara has no SSP or POA&M. OSCAL has no threats or capabilities. They share a boundary at **control catalogs** and **assessment results**.
 
